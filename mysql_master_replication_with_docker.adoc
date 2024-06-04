@@ -1,0 +1,282 @@
+Mysql Master Replication with Docker
+------------------------------------
+
+
+Code Explanation
+~~~~~~~~~~~~~~~~~
+
+Η έκδοση του docker που χρησιμοποιείτε είναι η 3.7. 
+[source,]
+-----------------
+version: '3.8' 
+-----------------
+Δημιουργούμε 4 services, 3 εκ των οποίων τρέχουν mysql 5.7 και 1 service για το phpmyadmin web administration tool. 
+[source,]
+----------------
+services: 
+  master: 
+    image: mysql:5.7 
+... 
+slave: 
+    image: mysql:5.7 
+... 
+config: 
+    image: mysql:5.7 
+... 
+phpmyadmin: 
+    image: phpmyadmin/phpmyadmin 
+----------------
+
+Κάθε ένα από τα services έχει μοναδικό container name , hostname (εκτός του service config στο οποίο δεν χρειάζονται)και όλα τα services ανήκουν στο δίκτυο sql-net. Επίσης κάθε service ανοίγει αντιστοιχίζει ports του service με ports του host. 
+[source,]
+-----------------
+... 
+container_name: 'mysql_master' 
+    hostname: mysql_master 
+... 
+networks: 
+      - sql-net 
+expose:
+      - '3306'
+    ports:
+      - '3307:3306'
+... 
+container_name: 'mysql_slave' 
+    hostname: mysql_slave 
+... 
+networks: 
+      - sql-net 
+expose:
+      - '3306'
+    ports:
+      - '3308:3306'
+... 
+networks: 
+      - sql-net 
+... 
+container_name: PhpMyAdmin 
+hostname: 127.0.0.1 
+... 
+networks: 
+      - sql-net 
+expose:
+      - '80'
+    ports:
+      - '8080:80'
+... 
+networks: 
+  sql-net: 
+    driver: bridge 
+-----------------
+
+Όλα τα services τα οποία θα τρέχουν για μεγάλο χρονικό διάστημα έχουν Out of Memory Exceptions. Ειδικότερα ο master και ο slave έχουν memory limit το 1GB και swap memory 1.5GB , ενώ το phpmyadmin service έχει memory limit το 512ΜB και swap memory 1GB 
+[source,]
+----------------
+...
+    mem_limit: 1g
+    memswap_limit: 1.5g
+...
+    mem_limit: 1g
+    memswap_limit: 1.5g
+...
+...
+    mem_limit: 512m
+    memswap_limit: 1g
+----------------
+
+O master και ο slave έχoυν δύο volumes, ένα εκ των οποίων έχει command configurations του service. Το service του phpmyadmin έχει ένα volume. Τα volumes master, slave και web δεν είναι external καθώς δημιουργούνται κατά το πρώτο build τον services 
+
+[source,]
+----------------
+...
+volumes:
+      - ./config/master:/etc/mysql/conf.d
+      - master:/var/lib/mysql
+...
+volumes:
+      - ./config/slave:/etc/mysql/conf.d
+      - slave:/var/lib/mysql
+...
+volumes:
+      - web:/var/www/html
+...
+volumes:
+  master:
+    external: false
+  slave:
+    external: false
+  web:
+    external: false
+----------------
+
+master.cnf
+~~~~~~~~~
+[source,]
+----------------
+[mysqld]
+
+server-id=1
+log-bin=mysql-bin
+log-slave-updates=1
+datadir=/var/lib/mysql
+bind-address=0.0.0.0
+----------------
+
+slave.cnf
+~~~~~~~~~
+[source,]
+----------------
+[mysqld]
+
+server-id=2
+log-bin=mysql-bin
+relay-log=mysql-relay-bin
+log-slave-updates=1
+datadir=/var/lib/mysql
+bind-address=0.0.0.0
+
+auto_increment_increment=2
+auto_increment_offset=2
+
+read-only=1
+
+skip-host-cache
+skip-name-resolve
+----------------
+Ο config container είναι αυτός που κάνει τις απαραίτητες ρυθμίσεις στον master και στον slave για να υπάρξει replication. Ο config αφού κάνει initialize τρέχει το command 
+
+[source,]
+----------------
+command: /bin/bash -x  /tmp/mysql_slave.sh 
+----------------
+
+Μετα την εκκίνηση του bash script υπάρχει μία αναμονή 60 δευτερολέπτων έτσι ώστε τα υπόλοιπα containers να έχουν το χρόνο να ξεκινήσουν τα services τους. Αμεσως μετά εξάγουμε την τιμή του πεδίου Position και File. Τέλος κανει configure τον slave να συνδέεται με τον master και να διαβάζει πληροφορίες με βαση τα πεδία Position και File που εξήγαμε στο προηγούμενο βήμα
+
+
+mysql_slave.sh
+^^^^^^^^^^^^^
+[source,]
+----------------
+#!/bin/bash
+
+echo "Waiting for mysql initialization"
+
+sleep 60
+
+mysql --host mysql_slave -uroot -proot -e "stop slave;";
+mysql --host mysql_slave -uroot -proot -e "reset slave all;";
+
+# connect to mysql_master and execute the following commands
+
+mysql --host mysql_master -uroot -proot -AN -e "GRANT REPLICATION SLAVE ON *.* TO 'repuser'@'%' IDENTIFIED BY 'reppassword';"
+mysql --host mysql_master -uroot -proot -AN -e "FLUSH PRIVILEGES;"
+
+Master_Position="$(mysql --host mysql_master -uroot -proot -e 'show master status \G'| grep Position | grep -o '[0-9]*')"
+Master_File="$(mysql --host mysql_master -uroot -proot -e 'show master status \G'| grep File | sed -n -e 's/^.*: //p')"
+
+#connect to mysql_slave db and execute the following commands
+
+mysql --host mysql_slave -uroot -proot -AN -e "change master to master_host='mysql_master',master_user='repuser', master_password='reppassword', master_log_file='$Master_File', master_log_pos=$Master_Position;"
+
+mysql --host mysql_slave -uroot -proot -AN -e "START SLAVE;"
+
+----------------
+
+Dockerfile.yml
+~~~~~~~~~~~~~
+[source,]
+----------------
+version: '3.8'
+
+services:
+  
+  master:
+    image: mysql:5.7
+    container_name: 'mysql_master'
+    hostname: mysql_master
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: master_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+      - ./config/master:/etc/mysql/conf.d
+      - master:/var/lib/mysql
+    networks:
+      - sql-net
+    expose:
+      - '3306'
+    ports:
+      - '3307:3306'
+    mem_limit: 1g
+    memswap_limit: 1.5g
+    restart: always
+
+
+  slave:
+    image: mysql:5.7
+    container_name: 'mysql_slave'
+    hostname: mysql_slave
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: master_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+      - ./config/slave:/etc/mysql/conf.d
+      - slave:/var/lib/mysql
+    networks:
+      - sql-net
+    expose:
+      - '3306'
+    ports:
+      - '3308:3306'
+    mem_limit: 1g
+    memswap_limit: 1.5g
+    restart: always
+  
+  config:
+    image: mysql:5.7
+    networks:
+      - sql-net
+    volumes:
+      - ./config/dbconf/mysql_slave.sh:/tmp/mysql_slave.sh
+    command: /bin/bash -x  /tmp/mysql_slave.sh
+
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: PhpMyAdmin
+    restart: always
+    hostname: 127.0.0.1
+    volumes:
+      - web:/var/www/html
+    networks:
+      - sql-net
+    expose:
+      - '80'
+    ports:
+      - '8080:80'
+    mem_limit: 512m
+    memswap_limit: 1g
+    environment:
+      PMA_HOST: mysql_master
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+
+
+networks:
+  sql-net:
+    driver: bridge
+
+volumes:
+  master:
+    external: false
+  slave:
+    external: false
+  web:
+    external: false
+
+----------------

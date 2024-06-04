@@ -1,0 +1,67 @@
+MYSQL REPLICATION with DOCKER
+
+version: 0.1
+
+This packages creates a container with a mysql database (master ), a container with the replicated database (slave) and an administration
+ tool that can be accessed through the web browser (phpmyadmin)  
+
+
+Tools and packages used
+
+docker.io
+mysql-server //most likely not needed
+docker-compose
+
+Read the INSTALL file for directions on how to install the above packages
+
+
+images installed
+
+mysql 5.7
+phpmyadmin 5.2.0
+docker version used 3.8
+
+
+How to use
+
+To build the containers run build.sh
+
+The build.sh file creates the replication automatically
+
+
+To enter the mysql master use the command 
+
+sudo docker exec -it mysql_master mysql -uroot -proot
+
+
+
+To enter the mysql slave use the command 
+
+sudo docker exec -it mysql_slave mysql -uroot -proot
+
+
+phpmyadmin address
+
+http://127.0.0.1:8080
+
+Master login information
+
+Server: mysql_master
+Username:root
+Password:root
+or
+Username:user
+Password:user
+
+Slave login information
+
+Server: mysql_slave
+Username:root
+Password:root
+or
+Username:user
+Password:user
+
+How to stop the containers
+
+you can either use CTR + C and then run the stop-container file or simply run stop-container

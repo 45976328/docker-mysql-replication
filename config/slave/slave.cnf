@@ -1,0 +1,17 @@
+[mysqld]
+
+server-id=2
+log-bin=mysql-bin
+relay-log=mysql-relay-bin
+log-slave-updates=1
+datadir=/var/lib/mysql
+bind-address=0.0.0.0
+
+auto_increment_increment=2
+auto_increment_offset=2
+
+read-only=1
+
+
+skip-host-cache
+skip-name-resolve

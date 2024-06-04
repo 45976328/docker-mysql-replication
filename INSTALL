@@ -1,0 +1,6 @@
+How to install the dependencies
+
+sudo apt-get install docker.io docker-compose mysql-server
+
+
+For more information on how to run the containers read the README file

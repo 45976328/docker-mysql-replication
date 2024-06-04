@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  
+  master:
+    image: mysql:5.7
+    container_name: 'mysql_master'
+    hostname: mysql_master
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: master_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+      - ./config/master:/etc/mysql/conf.d
+      - master:/var/lib/mysql
+    networks:
+      - sql-net
+    expose:
+      - '3306'
+    ports:
+      - '3307:3306'
+    mem_limit: 1g
+    memswap_limit: 1.5g
+    restart: always
+
+
+  slave:
+    image: mysql:5.7
+    container_name: 'mysql_slave'
+    hostname: mysql_slave
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: master_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: user
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+      - ./config/slave:/etc/mysql/conf.d
+      - slave:/var/lib/mysql
+    networks:
+      - sql-net
+    expose:
+      - '3306'
+    ports:
+      - '3308:3306'
+    mem_limit: 1g
+    memswap_limit: 1.5g
+    restart: always
+  
+  config:
+    image: mysql:5.7
+    networks:
+      - sql-net
+    volumes:
+      - ./config/dbconf/mysql_slave.sh:/tmp/mysql_slave.sh
+    command: /bin/bash -x  /tmp/mysql_slave.sh
+
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: PhpMyAdmin
+    restart: always
+    hostname: 127.0.0.1
+    volumes:
+      - web:/var/www/html
+    networks:
+      - sql-net
+    expose:
+      - '80'
+    ports:
+      - '8080:80'
+    mem_limit: 512m
+    memswap_limit: 1g
+    environment:
+      PMA_HOST: mysql_master
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+
+
+networks:
+  sql-net:
+    driver: bridge
+
+volumes:
+  master:
+    external: false
+  slave:
+    external: false
+  web:
+    external: false

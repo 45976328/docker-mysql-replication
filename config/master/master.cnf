@@ -1,0 +1,9 @@
+[mysqld]
+
+server-id=1
+log-bin=mysql-bin
+log-slave-updates=1
+datadir=/var/lib/mysql
+bind-address=0.0.0.0
+
+
